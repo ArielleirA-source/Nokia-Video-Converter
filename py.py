@@ -2,8 +2,15 @@ import ffmpeg
 import os
 import glob
 import threading
+import requests
 import customtkinter as ctk
 from tkinter import filedialog, messagebox, Listbox, Scrollbar
+from packaging import version
+import subprocess
+
+# Version information
+CURRENT_VERSION = "2.0"  # Your app's current version
+REPO_API_URL = "https://api.github.com/repos/ArielleirA-source/Nokia-Video-Converter/releases/latest"
 
 def convert_to_webm(input_file):
     base_name = os.path.splitext(input_file)[0]
@@ -49,7 +56,6 @@ def batch_convert(folder_path, file_listbox, progress_bar):
     messagebox.showinfo("Conversion Complete", "All files have been processed successfully!")
 
 def start_conversion(folder_path, file_listbox, progress_bar):
-    # Run batch conversion in a separate thread to keep UI responsive
     threading.Thread(target=batch_convert, args=(folder_path, file_listbox, progress_bar)).start()
 
 def select_folder(file_listbox, progress_bar):
@@ -69,14 +75,49 @@ def select_folder(file_listbox, progress_bar):
         convert_button.configure(state=ctk.NORMAL)
         convert_button.configure(command=lambda: start_conversion(folder_path, file_listbox, progress_bar))
 
+def check_for_updates():
+    try:
+        response = requests.get(REPO_API_URL)
+        response.raise_for_status()
+
+        latest_release = response.json()
+        latest_version = latest_release['tag_name'].strip('v')
+        release_url = latest_release['html_url']
+        
+        if version.parse(latest_version) > version.parse(CURRENT_VERSION):
+            update_prompt = messagebox.askyesno("Update Available", 
+                                                f"A new version ({latest_version}) is available! "
+                                                f"Do you want to download and install it?")
+            if update_prompt:
+                for asset in latest_release['assets']:
+                    if asset['name'] == "Video2NokiaInstaller.exe":
+                        download_url = asset['browser_download_url']
+                        local_installer_path = os.path.join(os.getcwd(), "Video2NokiaInstaller.exe")
+                        
+                        # Download the installer file
+                        with requests.get(download_url, stream=True) as installer_request:
+                            installer_request.raise_for_status()
+                            with open(local_installer_path, 'wb') as installer_file:
+                                for chunk in installer_request.iter_content(chunk_size=8192):
+                                    installer_file.write(chunk)
+                        # Run the installer
+                        subprocess.run(local_installer_path, shell=True)
+                        messagebox.showinfo("Installation", "The new version has been downloaded and launched for installation.")
+                        return
+                messagebox.showwarning("Installer Not Found", "The installer file could not be found in the latest release.")
+        else:
+            messagebox.showinfo("No Updates", "You're using the latest version.")
+    except requests.RequestException as e:
+        messagebox.showerror("Update Check Failed", f"Error checking for updates:\n{e}")
+
 # Initialize CustomTkinter
-ctk.set_appearance_mode("dark")  # Options: "dark" or "light"
-ctk.set_default_color_theme("blue")  # Options: "blue", "green", "dark-blue"
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
 
 # Create the main window
 root = ctk.CTk()
 root.title("Batch Video Converter")
-root.geometry("500x400")
+root.geometry("500x450")
 
 # Label
 label = ctk.CTkLabel(root, text="Select a folder with video files to convert:")
@@ -108,7 +149,11 @@ convert_button.pack(pady=5)
 # Progress Bar
 progress_bar = ctk.CTkProgressBar(root, width=400)
 progress_bar.pack(pady=10)
-progress_bar.set(0)  # Initial state
+progress_bar.set(0)
+
+# Update Button
+update_button = ctk.CTkButton(root, text="Check for Updates", command=check_for_updates)
+update_button.pack(pady=5)
 
 # Run the main event loop
 root.mainloop()
